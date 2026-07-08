@@ -381,17 +381,10 @@ def fetch_server_data_sync(server_ip, server_port, server_id=None):
             'Connection': 'keep-alive'
         }
         
-        # Ambil proxy
-        proxies = get_proxy()
-        
-        # Ambil players dengan proxy
-        for attempt in range(3):
+        # Ambil players dengan timeout 10 detik
+        for attempt in range(2):  # Cuma 2 kali percobaan
             try:
-                if proxies:
-                    resp = requests.get(players_url, timeout=15, headers=headers, proxies=proxies)
-                else:
-                    resp = requests.get(players_url, timeout=15, headers=headers)
-                    
+                resp = requests.get(players_url, timeout=10, headers=headers)
                 if resp.status_code == 200:
                     raw_data = resp.json()
                     for idx, player in enumerate(raw_data, 1):
@@ -411,27 +404,22 @@ def fetch_server_data_sync(server_ip, server_port, server_id=None):
                         p['no'] = idx
                     online = True
                     break
+            except requests.exceptions.Timeout:
+                continue
             except Exception as e:
-                if attempt == 2:
-                    print(f"Players error {server_ip}:{server_port} - {e}")
                 continue
         
-        # Ambil info dengan proxy
-        for attempt in range(3):
+        for attempt in range(2):
             try:
-                if proxies:
-                    resp = requests.get(info_url, timeout=15, headers=headers, proxies=proxies)
-                else:
-                    resp = requests.get(info_url, timeout=15, headers=headers)
-                    
+                resp = requests.get(info_url, timeout=10, headers=headers)
                 if resp.status_code == 200:
                     info = resp.json()
                     max_players = info.get('vars', {}).get('sv_maxClients', '?')
                     online = True
                     break
+            except requests.exceptions.Timeout:
+                continue
             except Exception as e:
-                if attempt == 2:
-                    print(f"Info error {server_ip}:{server_port} - {e}")
                 continue
         
         return {
@@ -633,15 +621,17 @@ async def on_ready():
     else:
         print('🌐 Proxy tidak aktif (tanpa proxy)')
     
-    # Test koneksi ke server
+    # Test koneksi ke server dengan error handling
     print('🔄 Testing koneksi ke server...')
     for server in FIVEM_SERVERS[:5]:  # Test 5 server pertama saja
         try:
             data = await get_server_data_with_cache(server)
-            if data and data['online']:
-                print(f'✅ {server["name"]} - Online ({len(data["players"])} pemain)')
+            if data and data.get('online', False):
+                print(f'✅ {server["name"]} - Online ({len(data.get("players", []))} pemain)')
             else:
                 print(f'❌ {server["name"]} - Offline')
+        except asyncio.TimeoutError:
+            print(f'⏰ {server["name"]} - Timeout')
         except Exception as e:
             print(f'❌ {server["name"]} - Error: {e}')
     
@@ -1226,6 +1216,38 @@ async def premium_list(ctx):
         )
     
     embed.set_footer(text="Hubungi owner untuk aktivasi premium")
+    await ctx.send(embed=embed)
+
+@bot.command(name='test')
+@commands.is_owner()
+async def test_command(ctx):
+    """!test - Test koneksi ke semua server"""
+    embed = discord.Embed(
+        title="🔄 Testing Server Connection",
+        color=EMBED_COLOR,
+        timestamp=datetime.now()
+    )
+    
+    results = []
+    for server in FIVEM_SERVERS:
+        try:
+            data = await get_server_data_with_cache(server)
+            if data and data.get('online', False):
+                results.append(f"✅ {server['name']} - Online ({len(data.get('players', []))} pemain)")
+            else:
+                results.append(f"❌ {server['name']} - Offline")
+        except asyncio.TimeoutError:
+            results.append(f"⏰ {server['name']} - Timeout")
+        except Exception as e:
+            results.append(f"❌ {server['name']} - Error")
+    
+    embed.add_field(
+        name="Hasil Test",
+        value="\n".join(results[:20]) if results else "Tidak ada hasil",
+        inline=False
+    )
+    
+    embed.set_footer(text=f"Total server: {len(FIVEM_SERVERS)}")
     await ctx.send(embed=embed)
 
 # ============ KONFIGURASI CHANNEL ============
