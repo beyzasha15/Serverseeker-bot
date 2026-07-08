@@ -20,7 +20,7 @@ FIVEM_SERVERS = [
         'id': 'cerita',
         'alias': ['cr', 'cerita'],
         'name': 'CR Roleplay 2.0',
-        'ip': '49.128.187.106',
+        'ip': 'play.ceritaroleplayku.id',
         'port': 30120,
         'connect': 'play.ceritaroleplayku.id',
         'logo': 'https://frontend.cfx-services.net/api/servers/icon/kr7k7d/577531329.png',
