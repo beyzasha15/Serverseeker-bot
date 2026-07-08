@@ -366,7 +366,48 @@ CACHE_DURATION = 15
 executor = ThreadPoolExecutor(max_workers=10)
 
 # ============ FUNGSI AMBIL DATA ============
-def fetch_server_data_sync(server_ip, server_port):
+# ============ FUNGSI AMBIL DATA ============
+def fetch_server_data_sync(server_ip, server_port, server_id=None):
+    # Coba CFX API dulu
+    try:
+        if server_id:
+            cfx_url = f"https://servers-frontend.fivem.net/api/servers/single/{server_id}"
+            resp = requests.get(cfx_url, timeout=10, headers={'User-Agent': 'Mozilla/5.0'})
+            
+            if resp.status_code == 200:
+                data = resp.json()
+                server_data = data.get('Data', {})
+                
+                if server_data and server_data.get('players') is not None:
+                    players_raw = server_data.get('players', [])
+                    max_players = server_data.get('vars', {}).get('sv_maxClients', '?')
+                    
+                    players_data = []
+                    for idx, player in enumerate(players_raw, 1):
+                        name = player.get('name', 'Unknown')
+                        name = name.replace('\x00', '').strip()
+                        name = re.sub(r'[`|]', '', name)
+                        if name:
+                            players_data.append({
+                                'no': idx,
+                                'id': player.get('id', idx),
+                                'name': name,
+                                'ping': player.get('ping', 0)
+                            })
+                    
+                    players_data.sort(key=lambda x: x['id'])
+                    for idx, p in enumerate(players_data, 1):
+                        p['no'] = idx
+                    
+                    return {
+                        'players': players_data,
+                        'max_players': max_players,
+                        'online': True
+                    }
+    except Exception as e:
+        print(f"CFX API error for {server_id}: {e}")
+    
+    # Fallback ke endpoint biasa
     try:
         players_url = f"http://{server_ip}:{server_port}/players.json"
         info_url = f"http://{server_ip}:{server_port}/info.json"
@@ -375,9 +416,13 @@ def fetch_server_data_sync(server_ip, server_port):
         max_players = '?'
         online = False
         
-        for attempt in range(2):
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        
+        for attempt in range(3):
             try:
-                resp = requests.get(players_url, timeout=5)
+                resp = requests.get(players_url, timeout=15, headers=headers)
                 if resp.status_code == 200:
                     raw_data = resp.json()
                     for idx, player in enumerate(raw_data, 1):
@@ -398,24 +443,22 @@ def fetch_server_data_sync(server_ip, server_port):
                     online = True
                     break
             except Exception as e:
-                if attempt == 0:
-                    continue
-                else:
+                if attempt == 2:
                     print(f"Players error {server_ip}:{server_port} - {e}")
+                continue
         
-        for attempt in range(2):
+        for attempt in range(3):
             try:
-                resp = requests.get(info_url, timeout=5)
+                resp = requests.get(info_url, timeout=15, headers=headers)
                 if resp.status_code == 200:
                     info = resp.json()
                     max_players = info.get('vars', {}).get('sv_maxClients', '?')
                     online = True
                     break
             except Exception as e:
-                if attempt == 0:
-                    continue
-                else:
+                if attempt == 2:
                     print(f"Info error {server_ip}:{server_port} - {e}")
+                continue
         
         return {
             'players': players_data,
@@ -445,7 +488,8 @@ async def get_server_data_with_cache(server):
         executor, 
         fetch_server_data_sync, 
         server['ip'], 
-        server['port']
+        server['port'],
+        server['id']  # Tambahkan server_id
     )
     
     cache[cache_key] = {
