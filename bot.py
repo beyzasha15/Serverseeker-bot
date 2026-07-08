@@ -105,17 +105,6 @@ FIVEM_SERVERS = [
         'max_players': 600
     },
     {
-        'id': 'kotakita',
-        'alias': ['kk', 'kotakita'],
-        'name': 'KotaKita Roleplay Indonesia',
-        'ip': '31.58.143.101',
-        'port': 30120,
-        'connect': '49.128.187.82:30120',
-        'logo': 'https://frontend.cfx-services.net/api/servers/icon/r35px8/1396819953.png',
-        'banner': 'https://cdn-img.kotakitarp.id/serverlist/banner.gif',
-        'max_players': 2048
-    },
-    {
         'id': 'indopride',
         'alias': ['idp', 'indopride'],
         'name': 'Indopride Roleplay Indonesia',
@@ -180,17 +169,6 @@ FIVEM_SERVERS = [
         'logo': 'https://frontend.cfx-services.net/api/servers/icon/zrvmg4/-1132135871.png',
         'banner': 'https://r2.fivemanage.com/3OwGU5Pi8eHUKktx99jNa/imebanner.gif',
         'max_players': 2048
-    },
-    {
-        'id': 'ceritakita',
-        'alias': ['ckrp', 'ceritakita'],
-        'name': 'Cerita Kita Roleplay',
-        'ip': '49.128.187.42',
-        'port': 30120,
-        'connect': '49.128.187.42',
-        'logo': 'https://frontend.cfx-services.net/api/servers/icon/zxmea5/932083279.png',
-        'banner': 'https://r2.fivemanage.com/pMA0ekV3sPved8KVE0xBj/ServerProfile_Banner_CKRP_1.png',
-        'max_players': 555
     },
     {
         'id': 'ceritakita',
@@ -328,10 +306,10 @@ SIGNAL_KUNING = '<:KUNING:1524261567603146802>'
 SIGNAL_ORANGE = '<:ORANGE:1524261569058312223>'
 SIGNAL_RED = '<:RED:1524261571273167019>'
 
-COLOR_HIJAU = 0xFF0066
-COLOR_KUNING = 0xFF0066
-COLOR_ORANGE = 0xFF0066
-COLOR_MERAH = 0xFF0066
+COLOR_HIJAU = 0x2ECC71
+COLOR_KUNING = 0xF1C40F
+COLOR_ORANGE = 0xE67E22
+COLOR_MERAH = 0xE74C3C
 
 ITEMS_PER_PAGE = 19
 
@@ -365,7 +343,6 @@ cache = {}
 CACHE_DURATION = 15
 executor = ThreadPoolExecutor(max_workers=10)
 
-# ============ FUNGSI AMBIL DATA ============
 # ============ FUNGSI AMBIL DATA ============
 def fetch_server_data_sync(server_ip, server_port, server_id=None):
     # Coba CFX API dulu
@@ -654,6 +631,18 @@ async def on_ready():
     print(f'Bot {bot.user} sudah aktif!')
     print(f'Memantau {len(FIVEM_SERVERS)} server FiveM')
     
+    # Test koneksi ke server
+    print('🔄 Testing koneksi ke server...')
+    for server in FIVEM_SERVERS:
+        try:
+            data = await get_server_data_with_cache(server)
+            if data and data['online']:
+                print(f'✅ {server["name"]} - Online ({len(data["players"])} pemain)')
+            else:
+                print(f'❌ {server["name"]} - Offline')
+        except Exception as e:
+            print(f'❌ {server["name"]} - Error: {e}')
+    
     if is_premium():
         level = premium_data.get('level', 'gold').upper()
         server_name = get_premium_server_name() or 'Semua Server'
@@ -666,7 +655,7 @@ async def on_ready():
     await bot.change_presence(
         activity=discord.Activity(
             type=discord.ActivityType.watching, 
-            name="Fast Track FiveM Finder"
+            name="ServerSeeker"
         ),
         status=discord.Status.online
     )
@@ -1541,7 +1530,7 @@ async def update_status():
         await bot.change_presence(
             activity=discord.Activity(
                 type=discord.ActivityType.watching,
-                name="Fast Track FiveM Finder"
+                name="ServerSeeker"
             ),
             status=discord.Status.online
         )
