@@ -14,6 +14,29 @@ load_dotenv()
 BOT_TOKEN = os.getenv('DISCORD_BOT_TOKEN')
 OWNER_ID = int(os.getenv('OWNER_ID', '0'))
 
+# ============ PROXY SETTINGS ============
+# Daftar proxy (ganti dengan proxy yang valid)
+# Format: http://username:password@ip:port
+PROXY_LIST = [
+    # 'http://user:pass@proxy1.example.com:8080',
+    # 'http://user:pass@proxy2.example.com:8080',
+    # 'http://user:pass@proxy3.example.com:8080',
+]
+
+# Proxy untuk bypass firewall/geo-blocking
+# Bisa dapat proxy gratis dari: https://free-proxy-list.net/
+# Atau pakai proxy berbayar seperti: Luminati, Oxylabs, Smartproxy
+
+def get_proxy():
+    """Ambil proxy secara acak dari daftar"""
+    if PROXY_LIST:
+        import random
+        return {
+            'http': random.choice(PROXY_LIST),
+            'https': random.choice(PROXY_LIST)
+        }
+    return None
+
 # ============ KONFIGURASI SERVER FIVEM ============
 FIVEM_SERVERS = [
     {
@@ -276,7 +299,6 @@ def get_premium_level():
     return None
 
 def can_access_server(server_id):
-    """Cek apakah user bisa akses server tertentu"""
     if not is_premium():
         return False
     
@@ -343,9 +365,8 @@ cache = {}
 CACHE_DURATION = 15
 executor = ThreadPoolExecutor(max_workers=10)
 
-# ============ FUNGSI AMBIL DATA ============
+# ============ FUNGSI AMBIL DATA DENGAN PROXY ============
 def fetch_server_data_sync(server_ip, server_port, server_id=None):
-    # Fallback ke endpoint biasa (tanpa CFX API)
     try:
         players_url = f"http://{server_ip}:{server_port}/players.json"
         info_url = f"http://{server_ip}:{server_port}/info.json"
@@ -360,10 +381,17 @@ def fetch_server_data_sync(server_ip, server_port, server_id=None):
             'Connection': 'keep-alive'
         }
         
-        # Ambil players
+        # Ambil proxy
+        proxies = get_proxy()
+        
+        # Ambil players dengan proxy
         for attempt in range(3):
             try:
-                resp = requests.get(players_url, timeout=10, headers=headers)
+                if proxies:
+                    resp = requests.get(players_url, timeout=15, headers=headers, proxies=proxies)
+                else:
+                    resp = requests.get(players_url, timeout=15, headers=headers)
+                    
                 if resp.status_code == 200:
                     raw_data = resp.json()
                     for idx, player in enumerate(raw_data, 1):
@@ -388,10 +416,14 @@ def fetch_server_data_sync(server_ip, server_port, server_id=None):
                     print(f"Players error {server_ip}:{server_port} - {e}")
                 continue
         
-        # Ambil info
+        # Ambil info dengan proxy
         for attempt in range(3):
             try:
-                resp = requests.get(info_url, timeout=10, headers=headers)
+                if proxies:
+                    resp = requests.get(info_url, timeout=15, headers=headers, proxies=proxies)
+                else:
+                    resp = requests.get(info_url, timeout=15, headers=headers)
+                    
                 if resp.status_code == 200:
                     info = resp.json()
                     max_players = info.get('vars', {}).get('sv_maxClients', '?')
@@ -596,9 +628,14 @@ async def on_ready():
     print(f'Bot {bot.user} sudah aktif!')
     print(f'Memantau {len(FIVEM_SERVERS)} server FiveM')
     
+    if PROXY_LIST:
+        print(f'🌐 Proxy aktif: {len(PROXY_LIST)} proxy tersedia')
+    else:
+        print('🌐 Proxy tidak aktif (tanpa proxy)')
+    
     # Test koneksi ke server
     print('🔄 Testing koneksi ke server...')
-    for server in FIVEM_SERVERS:
+    for server in FIVEM_SERVERS[:5]:  # Test 5 server pertama saja
         try:
             data = await get_server_data_with_cache(server)
             if data and data['online']:
@@ -624,6 +661,96 @@ async def on_ready():
         ),
         status=discord.Status.online
     )
+
+# ============ PERINTAH PROXY ============
+@bot.command(name='proxy')
+@commands.is_owner()
+async def proxy_command(ctx, action: str = None, proxy: str = None):
+    """!proxy list - Lihat daftar proxy aktif
+       !proxy add http://user:pass@ip:port - Tambah proxy
+       !proxy remove index - Hapus proxy
+       !proxy clear - Hapus semua proxy"""
+    global PROXY_LIST
+    
+    if action is None:
+        embed = discord.Embed(
+            title="🌐 Proxy Settings",
+            description="**Gunakan:**\n"
+                       "`!proxy list` - Lihat daftar proxy\n"
+                       "`!proxy add http://user:pass@ip:port` - Tambah proxy\n"
+                       "`!proxy remove 0` - Hapus proxy index ke-0\n"
+                       "`!proxy clear` - Hapus semua proxy",
+            color=EMBED_COLOR
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    if action.lower() == 'list':
+        if not PROXY_LIST:
+            embed = discord.Embed(
+                title="🌐 Proxy List",
+                description="Tidak ada proxy yang terdaftar",
+                color=0xE74C3C
+            )
+        else:
+            proxy_text = ""
+            for i, p in enumerate(PROXY_LIST):
+                # Sembunyikan password
+                display = re.sub(r'://.*?@', '://***@', p)
+                proxy_text += f"`{i}`: {display}\n"
+            
+            embed = discord.Embed(
+                title="🌐 Proxy List",
+                description=f"Total: {len(PROXY_LIST)} proxy\n\n{proxy_text}",
+                color=0x2ECC71
+            )
+        await ctx.send(embed=embed)
+        return
+    
+    if action.lower() == 'add':
+        if not proxy:
+            await ctx.send("❌ Masukkan proxy!\nContoh: `!proxy add http://user:pass@ip:port`")
+            return
+        
+        PROXY_LIST.append(proxy)
+        embed = discord.Embed(
+            title="✅ Proxy Added",
+            description=f"Proxy `{proxy[:20]}...` ditambahkan",
+            color=0x2ECC71
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    if action.lower() == 'remove':
+        try:
+            index = int(proxy)
+            if 0 <= index < len(PROXY_LIST):
+                removed = PROXY_LIST.pop(index)
+                embed = discord.Embed(
+                    title="✅ Proxy Removed",
+                    description=f"Proxy `{removed[:20]}...` dihapus",
+                    color=0x2ECC71
+                )
+            else:
+                embed = discord.Embed(
+                    title="❌ Invalid Index",
+                    description=f"Index harus antara 0 dan {len(PROXY_LIST)-1}",
+                    color=0xE74C3C
+                )
+            await ctx.send(embed=embed)
+        except:
+            await ctx.send("❌ Masukkan index yang valid!")
+        return
+    
+    if action.lower() == 'clear':
+        PROXY_LIST = []
+        embed = discord.Embed(
+            title="✅ All Proxies Cleared",
+            description="Semua proxy telah dihapus",
+            color=0x2ECC71
+        )
+        await ctx.send(embed=embed)
+        return
 
 # ============ !SERVER ============
 @bot.command(name='server')
@@ -675,7 +802,6 @@ async def server_status(ctx):
     status_list = []
     
     for server in FIVEM_SERVERS:
-        # Cek akses untuk Gold
         if not can_access_server(server['id']):
             continue
         
@@ -748,7 +874,6 @@ async def player_command(ctx, server_id: str, *, query: str = None):
             await ctx.send(embed=embed)
             return
         
-        # Cek akses untuk Gold
         if not can_access_server(target_server['id']):
             level = premium_data.get('level', 'gold').upper()
             embed = discord.Embed(
@@ -959,11 +1084,6 @@ async def player_command(ctx, server_id: str, *, query: str = None):
 @bot.command(name='premium')
 @commands.is_owner()
 async def premium_activate(ctx, level: str = None, days: int = None, server_id: str = None):
-    """
-    !premium <gold/platinum> <hari> <server_id> - Aktivasi premium
-    Contoh: !premium gold 30 cerita
-            !premium platinum 30 all
-    """
     if level is None or days is None:
         embed = discord.Embed(
             title="Premium Activation",
@@ -981,7 +1101,6 @@ async def premium_activate(ctx, level: str = None, days: int = None, server_id: 
         await ctx.send("❌ Hari harus lebih dari 0!")
         return
     
-    # Untuk Gold, wajib pilih server
     if level.lower() == 'gold':
         if server_id is None or server_id.lower() == 'all':
             await ctx.send("❌ Gold memerlukan server_id tertentu!\nContoh: `!premium gold 30 cerita`")
@@ -1006,7 +1125,6 @@ async def premium_activate(ctx, level: str = None, days: int = None, server_id: 
     
     save_premium_data()
     
-    # Format durasi
     if days == 1:
         durasi = "1 hari"
     elif days < 30:
@@ -1098,7 +1216,6 @@ async def premium_list(ctx):
         inline=False
     )
     
-    # Tampilkan status premium user saat ini
     if is_premium():
         level = premium_data.get('level', 'gold').upper()
         server_display = get_premium_server_name() or 'Semua Server' if premium_data.get('server_id') == 'all' else 'Semua Server'
@@ -1112,11 +1229,7 @@ async def premium_list(ctx):
     await ctx.send(embed=embed)
 
 # ============ KONFIGURASI CHANNEL ============
-# Daftar channel ID yang diizinkan untuk menggunakan bot
-# Kosongkan [] untuk mengizinkan semua channel
-ALLOWED_CHANNELS = []  # Contoh: [123456789012345678, 987654321098765432]
-
-# File untuk menyimpan channel yang diizinkan
+ALLOWED_CHANNELS = []
 CHANNEL_FILE = 'allowed_channels.json'
 
 def load_allowed_channels():
@@ -1140,25 +1253,20 @@ def save_allowed_channels():
 load_allowed_channels()
 
 def is_channel_allowed(channel_id):
-    """Cek apakah channel diizinkan"""
     if not ALLOWED_CHANNELS:
-        return True  # Jika kosong, semua channel diizinkan
+        return True
     return channel_id in ALLOWED_CHANNELS
 
 # ============ CHECK CHANNEL ============
 @bot.event
 async def on_message(message):
-    # Skip pesan dari bot
     if message.author.bot:
         return
     
-    # Skip jika bukan command
     if not message.content.startswith('!'):
         return
     
-    # Cek apakah channel diizinkan
     if not is_channel_allowed(message.channel.id):
-        # Buat daftar channel yang diizinkan
         if ALLOWED_CHANNELS:
             channel_mentions = []
             for channel_id in ALLOWED_CHANNELS:
@@ -1181,7 +1289,6 @@ async def on_message(message):
         await message.channel.send(embed=embed, delete_after=10)
         return
     
-    # Proses command
     await bot.process_commands(message)
 
 # ============ !SETCHANNEL ============
@@ -1207,7 +1314,6 @@ async def set_channel(ctx, action: str = None, channel: discord.TextChannel = No
         await ctx.send(embed=embed)
         return
     
-    # ===== LIST =====
     if action.lower() == 'list':
         if not ALLOWED_CHANNELS:
             embed.description = "✅ **Semua channel diizinkan** (tidak ada pembatasan)"
@@ -1227,7 +1333,6 @@ async def set_channel(ctx, action: str = None, channel: discord.TextChannel = No
         await ctx.send(embed=embed)
         return
     
-    # ===== CLEAR =====
     if action.lower() == 'clear':
         ALLOWED_CHANNELS = []
         save_allowed_channels()
@@ -1236,14 +1341,12 @@ async def set_channel(ctx, action: str = None, channel: discord.TextChannel = No
         await ctx.send(embed=embed)
         return
     
-    # ===== ADD / REMOVE =====
     if channel is None:
         embed.description = f"❌ Harap mention channel!\nContoh: `!setchannel {action} #channel`"
         embed.color = 0xE74C3C
         await ctx.send(embed=embed)
         return
     
-    # ADD
     if action.lower() == 'add':
         if channel.id in ALLOWED_CHANNELS:
             embed.description = f"⚠️ Channel {channel.mention} sudah ada di daftar!"
@@ -1256,7 +1359,6 @@ async def set_channel(ctx, action: str = None, channel: discord.TextChannel = No
         await ctx.send(embed=embed)
         return
     
-    # REMOVE
     if action.lower() == 'remove':
         if channel.id not in ALLOWED_CHANNELS:
             embed.description = f"⚠️ Channel {channel.mention} tidak ada di daftar!"
@@ -1269,7 +1371,6 @@ async def set_channel(ctx, action: str = None, channel: discord.TextChannel = No
         await ctx.send(embed=embed)
         return
     
-    # Invalid action
     embed.description = f"❌ Aksi `{action}` tidak dikenal!\nGunakan: `add`, `remove`, `list`, `clear`"
     embed.color = 0xE74C3C
     await ctx.send(embed=embed)
@@ -1455,7 +1556,7 @@ async def commands_list(ctx):
     if ctx.author.id == OWNER_ID:
         embed.add_field(
             name="Owner",
-            value="`!premium <level> <hari> <server_id>` - Aktivasi premium\n`!premiumdeactivate` - Nonaktifkan premium\n`!setchannel add/remove/list/clear` - Atur channel bot",
+            value="`!premium <level> <hari> <server_id>` - Aktivasi premium\n`!premiumdeactivate` - Nonaktifkan premium\n`!setchannel add/remove/list/clear` - Atur channel bot\n`!proxy list/add/remove/clear` - Atur proxy",
             inline=False
         )
     
